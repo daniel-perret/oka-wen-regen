@@ -26,7 +26,7 @@ fia$COND <- fia$COND %>%
 
 fia$SEEDLING <- fia$SEEDLING %>% 
   left_join(fia$PLOT %>% 
-              select(PLT_CN,PREV_PLT_CN,most.recent),
+              select(PLT_CN,PREV_PLT_CN,most.recent,MANUAL,MEASYEAR),
             by="PLT_CN")
 
 fia$TREE <- fia$TREE %>% 
@@ -137,19 +137,72 @@ plt.cd <- fia$PLOT %>%
   
 
 
+## filtering for microplots that had no regen at T1 and regen at T2
 
 
+##### strategy here is going to be to join new columns to the SEEDLING table for previous microplot CN and previous TREECOUNT
 
+fia$SEED2 <- fia$SEEDLING %>% 
+  mutate(MICRO_CN = CN,
+         PLT_CN_SUBP = paste0(PLT_CN,"_",SUBP),
+         PREV_PLT_CN_SUBP = paste0(PREV_PLT_CN,"_",SUBP))
 
+fia$SEED2 <- fia$SEED2 %>% 
+  left_join(fia$SEED2 %>% 
+              select(PREV_PLT_CN_SUBP = PLT_CN_SUBP,
+                     SPCD,
+                     TREECOUNT.prev = TREECOUNT,
+                     TREECOUNT_CALC.prev = TREECOUNT_CALC),
+            by = c("PREV_PLT_CN_SUBP","SPCD"))
 
+fia$SEED2 %>% 
+  filter(is.na(TREECOUNT_CALC.prev)) %>% 
+  pull(PLT_CN_SUBP) %>% 
+  unique() %>% 
+  length()
 
+fia$SEED2 %>% 
+  filter(is.na(TREECOUNT_CALC.prev),
+         !PLT_CN %in% cond.plt,
+         !PLT_CN %in% trt.plt) %>% 
+  group_by(SPCD) %>% 
+  filter(n() > 50) %>% 
+  ungroup() %>% 
+  ggplot(.,
+         aes(x=TREECOUNT_CALC*TPA_UNADJ)) +
+  geom_density() +
+  facet_wrap(facets = ~SPCD,
+             scales = "free") +
+  labs(x = "Seedlings/ac")
 
+#doing similar mess-arounds with rFIA
 
+comp.plts <- fia$SEED2 %>% 
+  filter(is.na(TREECOUNT_CALC.prev),
+         !PLT_CN %in% cond.plt,
+         !PLT_CN %in% trt.plt,
+         most.recent == 1) %>% 
+  pull(PLT_CN) %>% 
+  unique()
 
+seed.est <- rFIA::seedling(db = fia,
+                           grpBy = SUBP,
+                           byPlot = T,
+                           bySpecies = T) %>% 
+  filter(PLT_CN %in% comp.plts)
 
-
-
-
+seed.est %>% 
+  group_by(COMMON_NAME) %>% 
+  slice_min(order_by = TPA, prop = 0.9) %>% 
+  filter(n() > 100,
+         TPA/max(TPA) < 0.95) %>% 
+  ungroup() %>% 
+  ggplot(.,
+         aes(x = TPA)) +
+  geom_density(fill = "gray75", lwd = 1) + 
+  facet_wrap(facets = ~fct_infreq(COMMON_NAME),
+             scales = "free_y") + 
+  labs(x = "Seedlings/ac")
 
 
 

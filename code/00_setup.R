@@ -22,4 +22,4 @@ theme_update(text = element_text(size=16, color = "black"),
              strip.background = element_blank(),
              panel.border=element_rect(linewidth=1.5))
 
-
+options(scipen = 9999)
