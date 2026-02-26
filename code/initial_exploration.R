@@ -5,9 +5,20 @@
 
 ## load FIA data for WA state ####
 
-fia <- rFIA::readFIA(dir = "data/WA_FIA_021326/",states = "WA", common = T)
+#fia <- rFIA::readFIA(dir = "data/WA_FIA_021326/",states = "WA", common = T)
 
-# fia <- rFIA::readFIA(dir = "/Users/DanielPerret/Box/01. daniel.perret Workspace/FIA_DATA/fia_data_092525/",states = c("WA","OR","ID","MT"), common = T)
+fia <- rFIA::readFIA(dir = "/Users/daniel.perret/Box/DPerret_Workspace/SHARED_DATA/FIA/fia_data_092525/",states = c("WA","OR","ID","MT"), common = T)
+
+## load some ancillary spatial data
+
+aoi <- sf::read_sf("data/Study Area/Study Area.shp") %>% 
+  sf::st_transform(crs = st_crs("EPSG:4326")) %>% 
+  sf::st_make_valid()
+ecoregions <- sf::read_sf("/Users/daniel.perret/Box/DPerret_Workspace/base_spatialdata/cleland_usfs_ecoregions/S_USA.EcomapSections.shp") %>% 
+  sf::st_transform(crs = st_crs("EPSG:4326")) %>% 
+  sf::st_make_valid()
+
+eco.filt <- sf::st_filter(ecoregions, aoi, .predicate = st_overlaps)
 
 ####### creating some fields for convenience ####
 
@@ -137,7 +148,7 @@ plt.cd <- fia$PLOT %>%
   
 
 
-## filtering for microplots that had no regen at T1 and regen at T2
+## filtering for microplots that had no regen at T1 and regen at T2 --------
 
 
 ##### strategy here is going to be to join new columns to the SEEDLING table for previous microplot CN and previous TREECOUNT
@@ -179,7 +190,7 @@ fia$SEED2 %>%
 
 comp.plts <- fia$SEED2 %>% 
   filter(is.na(TREECOUNT_CALC.prev),
-         !PLT_CN %in% cond.plt,
+         #!PLT_CN %in% cond.plt,
          !PLT_CN %in% trt.plt,
          most.recent == 1) %>% 
   pull(PLT_CN) %>% 
@@ -187,11 +198,13 @@ comp.plts <- fia$SEED2 %>%
 
 seed.est <- rFIA::seedling(db = fia,
                            grpBy = SUBP,
+                           polys = eco.filt,
                            byPlot = T,
                            bySpecies = T) %>% 
   filter(PLT_CN %in% comp.plts)
 
 seed.est %>% 
+  filter(!PLT_CN %in% cond.plt) %>% 
   group_by(COMMON_NAME) %>% 
   slice_min(order_by = TPA, prop = 0.9) %>% 
   filter(n() > 100,
@@ -204,13 +217,35 @@ seed.est %>%
              scales = "free_y") + 
   labs(x = "Seedlings/ac")
 
+# dicing microplot revisits by disturbance status -----
 
+mp.revisit.dist <- seed.est %>% 
+  group_by(COMMON_NAME) %>% 
+  slice_min(order_by = TPA, prop = 0.9) %>% # remove top 10% of obs
+  filter(n() > 100, #only those with more than 100 obs
+         TPA/max(TPA) < 0.95) %>% 
+  ungroup() %>% 
+  left_join(plt.cd, by = "PLT_CN")
 
-
-
-
-
-
+mp.revisit.dist %>% 
+  ggplot(.,
+         aes(x = TPA)) +
+  geom_density(aes(fill = factor(cond.fire), 
+                   col = factor(cond.fire)),
+               lwd = 1,
+               alpha = 0.5) +
+  facet_wrap(facets = ~fct_infreq(COMMON_NAME),
+             scales = "free_y") +
+  labs(x = "Seedlings/ac") +
+  scale_color_manual(name = "Burned",
+                     values = c("0" = "dodgerblue3",
+                                "1" = "firebrick3"),
+                     aesthetics = c("fill","col")) +
+  geom_text(data = . %>% group_by(COMMON_NAME) %>% 
+              summarise(n.1 = sum(cond.fire),
+                        n.0 = n()-n.1),
+            aes(label = paste0("n_unb=",n.0,"\nn_brn=",n.1), x = Inf, y = Inf),
+            hjust = 1.1, vjust = 1.5)
 
 
 
